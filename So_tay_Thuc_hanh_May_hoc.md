@@ -665,68 +665,83 @@ Khi chạy code và gặp màn hình thông báo lỗi màu đỏ đáng sợ, *
 
 # MODULE 3: Kỹ nghệ Dọn dẹp & Xử lý Số liệu Nghiên cứu (Nền tảng quan trọng nhất)
 
-### [Bài 3.1] Thống kê mô tả toàn diện với Pandas (Nền tảng kiểm định giả thuyết)
+### [Bài 3.1] Nạp và Khám phá Dữ liệu (Data Profiling)
 
 #### 1. Lý thuyết cốt lõi
-Trước khi áp dụng bất kỳ mô hình học máy phức tạp nào, nhà khoa học bắt buộc phải hiểu rõ đặc tính phân phối của dữ liệu. **Thống kê mô tả (Descriptive Statistics)** cung cấp bức tranh toàn cảnh về xu hướng trung tâm (Central Tendency - Mean, Median) và độ phân tán (Dispersion - SD, Variance, Range) của dữ liệu.
+Trước khi thực hiện bất kỳ can thiệp hay phân tích mô hình học máy nào, nhà nghiên cứu bắt buộc phải tiến hành **Data Profiling (Khám phá thực trạng dữ liệu)**. Bước này giúp nhận diện "sức khỏe" tổng thể của bộ dữ liệu: phát hiện kiểu dữ liệu sai lệch, các cột rỗng hoặc các dòng bị trùng lặp.
+*   `df.head()`: Xem nhanh cấu trúc của các dòng dữ liệu đầu tiên để nắm bắt sơ bộ.
+*   `df.info()`: Kiểm tra kiểu dữ liệu (data type) của từng biến số (biến phân loại, biến liên tục, hoặc đối tượng ngày tháng).
+*   `df.describe()`: Cung cấp thống kê mô tả nhanh (mean, std, min, max, các phân vị) để đánh giá phân phối.
 
-Đặc biệt, việc xem xét các chỉ số **Độ lệch (Skewness)** và **Độ nhọn (Kurtosis)** giúp xác định xem dữ liệu có tuân theo quy luật phân phối chuẩn (Gaussian Distribution) hay không. Đây là cơ sở cốt lõi để quyết định lựa chọn các thuật toán huấn luyện học máy thích hợp.
+```
+ [Dữ liệu Thô (CSV/Excel)] ──> [Data Profiling (info, describe)] ──> [Báo cáo thực trạng]
+```
 
 #### 2. Code mẫu thực hành (Google Colab)
 ```python
 import pandas as pd
 import numpy as np
+import io
 
-# 1. Khởi tạo một tập dữ liệu lâm sàng giả lập (để minh họa)
+# 1. Giả lập bộ dữ liệu nhật ký xe tải qua cổng cảng (Smart Gate Log)
+# Mô phỏng tập mẫu lớn (100,000 dòng) bằng cách tạo 1,000 dòng dữ liệu ngẫu nhiên
 np.random.seed(42)
-clinical_data = {
-    'Tuoi': np.random.normal(loc=55, scale=10, size=200).astype(int), # Phân phối chuẩn
-    'Chi_so_Huyet_Ap': np.random.exponential(scale=30, size=200) + 90, # Lệch phải (non-normal)
-    'Nong_do_Glucose': np.random.normal(loc=6.5, scale=1.5, size=200)
+n_samples = 1000
+
+truck_plates = ['51C-' + str(np.random.randint(10000, 99999)) for _ in range(500)] # 500 biển số xe khác nhau
+selected_plates = np.random.choice(truck_plates, size=n_samples) # Trùng lặp biển số xe đi vào/ra nhiều lần
+
+gate_action = np.random.choice(['IN', 'OUT'], size=n_samples, p=[0.5, 0.5])
+shifts = np.random.choice(['Day_Shift', 'Night_Shift'], size=n_samples, p=[0.6, 0.4])
+
+# Tạo chuỗi dữ liệu
+gate_data = {
+    'Log_ID': [f"LOG_{i:05d}" for i in range(1, n_samples + 1)],
+    'Truck_Plate': selected_plates,
+    'Gate_Action': gate_action,
+    'Shift': shifts,
+    'Weight_Tons': np.random.uniform(12.0, 45.0, n_samples)
 }
-df = pd.DataFrame(clinical_data)
+df_gate = pd.DataFrame(gate_data)
 
-# 2. Thực hiện Thống kê mô tả nhanh bằng Pandas
-descriptive_summary = df.describe().T
-print("Thống kê mô tả cơ bản:\n", descriptive_summary)
+# 2. Thực hiện Data Profiling cơ bản
+print("--- 5 dòng đầu tiên ---")
+print(df_gate.head())
 
-# 3. Tính toán bổ sung Độ lệch (Skewness) và Độ nhọn (Kurtosis)
-skew_values = df.skew()
-kurtosis_values = df.kurt()
+print("\n--- Thông tin cấu trúc dữ liệu ---")
+print(df_gate.info())
 
-for col in df.columns:
-    print(f"\nBiến số '{col}':")
-    print(f" - Độ lệch (Skewness): {round(skew_values[col], 3)} (Phân phối chuẩn ~ 0)")
-    print(f" - Độ nhọn (Kurtosis): {round(kurtosis_values[col], 3)} (Phân phối chuẩn ~ 0)")
+print("\n--- Thống kê mô tả các cột số ---")
+print(df_gate.describe())
+
+# 3. Phân tích Tình huống Cảng: Quét trùng lặp biển số xe và tìm ca làm việc đông nhất
+duplicate_counts = df_gate['Truck_Plate'].duplicated().sum()
+peak_shift = df_gate['Shift'].value_counts()
+
+print("\n--- PHÂN TÍCH TÌNH HUỐNG CẢNG ---")
+print(f"Số lượng biển số xe tải bị trùng lặp/đi lại nhiều lần: {duplicate_counts} lượt")
+print("Lưu lượng xe tải theo ca làm việc:")
+print(peak_shift)
 ```
 
 #### 3. Cách đọc kết quả & Diễn giải trong bài báo
-* **Kết quả đầu ra của code:** Bảng tóm tắt các giá trị (mean, std, min, 25%, 50%, 75%, max) và các hệ số skewness, kurtosis. Ví dụ, biến `Tuoi` có Skewness gần bằng 0 cho thấy tính đối xứng tốt; biến `Chi_so_Huyet_Ap` có Skewness dương cao (>1) chỉ ra dữ liệu lệch phải mạnh.
-* **Cách viết vào bài báo khoa học (Bảng đặc điểm nền - Table 1: Baseline Characteristics):**
-  > "The baseline characteristics of the study cohort (N=200) were analyzed using descriptive statistics. Age followed a normal distribution with a mean of 54.8 years (SD = 9.8). Conversely, blood pressure measurements exhibited a significant positive skewness (Skewness = 1.34), indicating a non-normal distribution; thus, non-parametric approaches and median values were prioritized for subsequent representation."
+*   **Kết quả đầu ra của code:**
+    Thông tin cấu trúc cho thấy cột `Weight_Tons` là kiểu số thực (`float64`), các cột còn lại là kiểu chuỗi hoặc phân loại (`object`). Đếm được số xe trùng lặp (ví dụ: `500` lượt xe quay vòng) và chỉ ra `Day_Shift` là ca có lưu lượng xe tải cao hơn (chiếm khoảng 60%).
+*   **Cách viết vào bài báo khoa học (Phần Data Source and Profiling):**
+    > "Initial data profiling was performed on the gate transit registry containing simulated records of truck movements. The data schema contains numeric payloads ($Weight\\_Tons$) and nominal categoricals ($Gate\\_Action$, $Shift$). Diagnostic checks confirmed a high rate of vehicle recycling, with duplicate plate logs representing repeat terminal visits. Operational intensity was concentrated during the daytime shift (Day Shift), accounting for approximately 60.0% of the total gate transactions."
 
 ---
 
-### [Bài 3.2] Xử lý Dữ liệu khuyết thiếu (Missing Data) - Xóa bỏ hay Điền khuyết?
+### [Bài 3.2] Xử lý Dữ liệu Khuyết thiếu (Missing Data)
 
 #### 1. Lý thuyết cốt lõi
-Dữ liệu khuyết (Missing Values) là thực tế không thể tránh khỏi trong nghiên cứu thực địa do lỗi thiết bị, bệnh nhân bỏ cuộc, hoặc phiếu khảo sát không được điền đầy đủ.
-Nhà nghiên cứu cần phân biệt 3 cơ chế khuyết thiếu:
-*   **MCAR (Missing Completely at Random):** Khuyết hoàn toàn ngẫu nhiên.
-*   **MAR (Missing at Random):** Khuyết ngẫu nhiên (chỉ phụ thuộc vào các biến quan sát được).
-*   **MNAR (Missing Not at Random):** Khuyết không ngẫu nhiên (phụ thuộc vào chính biến bị khuyết).
+Hệ thống học máy sẽ báo lỗi nghiêm trọng nếu đầu vào chứa giá trị khuyết (`NaN`). Ta cần áp dụng chiến lược điền khuyết (Data Imputation) phù hợp với thực tế nghiệp vụ:
+*   **Xóa bỏ (Drop):** Loại bỏ hàng chứa giá trị khuyết nếu tỷ lệ khuyết nhỏ ($<5\%$) hoặc khuyết ở chính biến mục tiêu cần dự báo.
+*   **Điền khuyết (Fillna):** Điền bằng giá trị trung bình (Mean) đối với phân phối chuẩn, hoặc trung vị (Median) đối với dữ liệu lệch/ngoại lai nhằm bảo toàn số lượng mẫu.
+*   **Nội suy tuyến tính (Interpolate):** Đặc biệt hiệu quả đối với dữ liệu chuỗi thời gian hoặc quỹ đạo không gian (GPS), nơi giá trị tiếp theo phụ thuộc trực tiếp vào xu hướng của các giá trị trước và sau nó.
 
-**Giải pháp:**
-*   Nếu tỷ lệ khuyết nhỏ (< 5% mẫu) và thuộc cơ chế MCAR: Có thể loại bỏ dòng dữ liệu (Listwise Deletion).
-*   Nếu tỷ lệ lớn hơn: Phải dùng kỹ thuật **Điền khuyết (Imputation)**. Việc điền bằng **Trung vị (Median)** được ưu tiên hơn trung bình (Mean) khi dữ liệu có phân phối lệch hoặc chứa giá trị ngoại lai vì trung vị có tính kháng nhiễu (robust) tốt hơn.
-
-```mermaid
-graph TD
-    A[Bắt đầu kiểm tra Missing Data] --> B{Tỷ lệ khuyết < 5% và thuộc MCAR?}
-    B -- Đúng --> C[Xóa bỏ dòng khuyết - Listwise Deletion]
-    B -- Sai --> D{Biến phân phối chuẩn?}
-    D -- Đúng --> E[Điền khuyết bằng Giá trị Trung bình - Mean]
-    D -- Sai --> F[Điền khuyết bằng Giá trị Trung vị - Median]
+```
+ [Tọa độ GPS: 10.72 -> NaN -> 10.74] ──(Nội suy tuyến tính)──> [10.72 -> 10.73 -> 10.74]
 ```
 
 #### 2. Code mẫu thực hành (Google Colab)
@@ -734,136 +749,198 @@ graph TD
 import pandas as pd
 import numpy as np
 
-# 1. Giả lập tập số liệu nghiên cứu có chứa giá trị trống (NaN)
-data_lamsang = {
-    'Benh_nhan_ID': [f"ID_{i}" for i in range(1, 11)],
-    'Nhiet_Do_Co_The': [37.2, 36.8, np.nan, 38.5, 36.5, np.nan, 37.0, 39.1, 36.9, 37.2],
-    'Nhiet_Tim': [72, 75, 80, 95, 68, 70, np.nan, 102, 74, np.nan]
+# 1. Giả lập nhật ký định vị GPS của xe nâng bãi (Reach Stacker) bị mất tín hiệu trong 5 phút
+reach_stacker_logs = {
+    'Time_Min': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    'Latitude': [10.72910, 10.72915, 10.72920, np.nan, np.nan, np.nan, 10.72940, 10.72945, 10.72950, np.nan],
+    'Weight_Loaded': [25.0, 25.0, 25.2, 25.1, np.nan, 25.0, 25.3, np.nan, 25.1, 25.2]
 }
-df_clinical = pd.DataFrame(data_lamsang)
+df_gps = pd.DataFrame(reach_stacker_logs)
+print("--- Dữ liệu khuyết ban đầu ---")
+print(df_gps)
 
-print("--- Số lượng mẫu thiếu trước khi xử lý ---")
-print(df_clinical.isnull().sum())
+# 2. Đếm số lượng mẫu thiếu trên từng cột
+print("\nSố lượng ô khuyết thiếu:")
+print(df_gps.isnull().sum())
 
-# 2. Xử lý cột 'Nhiet_Do_Co_The' bằng cách điền Trung vị (Median Imputation)
-median_temp = df_clinical['Nhiet_Do_Co_The'].median()
-df_clinical['Nhiet_Do_Co_The'].fillna(median_temp, inplace=True)
+# 3. Điền khuyết cột trọng lượng 'Weight_Loaded' bằng Trung vị (Median) do tính kháng nhiễu tốt
+median_weight = df_gps['Weight_Loaded'].median()
+df_gps['Weight_Loaded'].fillna(median_weight, inplace=True)
 
-# 3. Xử lý cột 'Nhiet_Tim' bằng thuật toán KNN Imputer (Phương pháp nâng cao cho nghiên cứu)
-from sklearn.impute import KNNImputer
-imputer = KNNImputer(n_neighbors=2)
-# Chỉ điền khuyết cho các cột số
-numerical_cols = ['Nhiet_Do_Co_The', 'Nhiet_Tim']
-df_clinical[numerical_cols] = imputer.fit_transform(df_clinical[numerical_cols])
+# 4. Nội suy tọa độ 'Latitude' bằng phương pháp Nội suy Tuyến tính (Linear Interpolation)
+df_gps['Latitude'] = df_gps['Latitude'].interpolate(method='linear')
 
-print("\n--- Số lượng mẫu thiếu sau khi xử lý ---")
-print(df_clinical.isnull().sum())
-print("\nBảng dữ liệu đã điền khuyết:\n", df_clinical)
+print("\n--- Dữ liệu sau khi xử lý điền khuyết và nội suy ---")
+print(df_gps)
 ```
 
 #### 3. Cách đọc kết quả & Diễn giải trong bài báo
-* **Kết quả đầu ra của code:** Cột `Nhiet_Do_Co_The` và `Nhiet_Tim` không còn giá trị `NaN` (số mẫu khuyết về 0). Các giá trị khuyết đã được thay thế bằng trung vị hoặc giá trị ước lượng từ những bệnh nhân tương đồng nhất (KNN).
-* **Cách viết vào bài báo khoa học (Phần Xử lý dữ liệu khuyết - Missing Data handling):**
-  > "Missing values were detected in 'Body Temperature' (20.0%) and 'Heart Rate' (30.0%) due to minor sensor detachment during clinical monitoring. To prevent statistical bias and preserve sample size, missing observations for 'Body Temperature' were imputed using Median Imputation. Missing data for 'Heart Rate' were reconstructed using K-Nearest Neighbors (KNN) imputation ($k=2$). Post-imputation inspections confirmed no distribution shift compared to the raw dataset."
+*   **Kết quả đầu ra của code:**
+    Cột `Weight_Loaded` bị thiếu tại phút 5 và phút 8 đã được điền bằng giá trị trung vị là `25.15`. Tọa độ `Latitude` tại các phút mất sóng 4, 5, 6 được tính toán nội suy tự động tăng dần một cách trơn tru (`10.72925`, `10.72930`, `10.72935`) nối liền từ phút thứ 3 đến phút thứ 7.
+*   **Cách viết vào bài báo khoa học (Phần Preprocessing - Imputation Strategy):**
+    > "Missing sensor records caused by telemetry dropout were addressed dynamically. Continuous numerical payload indicators ($Weight\\_Loaded$) were imputed using Robust Median Imputation to prevent biasing the baseline distribution. For geospatial coordinate dropouts ($Latitude$), a linear interpolation scheme was executed to reconstruct the vessel-to-yard vehicle trajectory, preserving the physical continuity of the machine pathing during data gap intervals."
 
 ---
 
-### [Bài 3.3] Nhận diện và Xử lý Số liệu ngoại lai (Outliers) bằng Z-score & IQR
+### [Bài 3.3] Nhận diện & Lọc Dữ liệu Ngoại lai (Outliers)
 
 #### 1. Lý thuyết cốt lõi
-**Ngoại lai (Outliers)** là những điểm dữ liệu nằm cách biệt bất thường so với phần lớn các quan sát khác. Ngoại lai có thể xuất hiện do lỗi đo đạc (cần loại bỏ) hoặc do biến dị tự nhiên (cần giữ lại và biện giải).
-Có hai phương pháp chuẩn hóa toán học để phát hiện ngoại lai:
-1.  **Phương pháp Z-score:** Áp dụng khi dữ liệu có phân phối chuẩn. Một điểm dữ liệu được coi là ngoại lai nếu nó nằm ngoài khoảng $[-3SD, +3SD]$ (tức $|Z| > 3$).
-2.  **Phương pháp IQR (Interquartile Range):** Áp dụng khi dữ liệu có phân phối lệch.
-    *   Hộp liên phân vị: $IQR = Q_3 - Q_1$ (Trong đó $Q_1$ là phân vị thứ 25, $Q_3$ là phân vị thứ 75).
-    *   Ngưỡng dưới (Lower bound) = $Q_1 - 1.5 \times IQR$
-    *   Ngưỡng trên (Upper bound) = $Q_3 + 1.5 \times IQR$
-    *   Mọi giá trị nằm ngoài hai ngưỡng này được phân loại là ngoại lai.
+**Dữ liệu ngoại lai (Outliers)** là những giá trị dị biệt bất thường so với phân phối chung, xuất hiện do lỗi nhập liệu của nhân viên hoặc sự cố cảm biến. Ta cần loại bỏ chúng để tránh làm méo mó các mô hình hồi quy.
+*   **Phương pháp Z-score:** Thích hợp khi dữ liệu phân phối chuẩn. Các điểm có $|Z| > 3$ là ngoại lai.
+    $$Z = \frac{x - \mu}{\sigma}$$
+*   **Phương pháp IQR (Interquartile Range):** Thích hợp khi dữ liệu phân phối lệch (lệch phải/lệch trái).
+    $$IQR = Q_3 - Q_1$$
+    *   Ngưỡng dưới = $Q_1 - 1.5 \times IQR$
+    *   Ngưỡng trên = $Q_3 + 1.5 \times IQR$
+
+```
+ [Ngưỡng dưới: Q1 - 1.5*IQR] <─────── Dải dữ liệu hợp lệ ───────> [Ngưỡng trên: Q3 + 1.5*IQR]
+```
 
 #### 2. Code mẫu thực hành (Google Colab)
 ```python
-import numpy as np
 import pandas as pd
+import numpy as np
 
-# 1. Tạo tập dữ liệu sinh thiết chứa giá trị ngoại lai cực đoan
-biopsy_data = {'Nong_do_Protein': [12.1, 14.3, 11.8, 13.5, 12.9, 100.5, 13.2, 12.0, 1.2, 14.1]} # 100.5 và 1.2 là các giá trị dị biệt
-df_bio = pd.DataFrame(biopsy_data)
+# 1. Giả lập nhật ký thời gian lưu bãi (Dwell Time) của container (ngày)
+# Chứa các giá trị ngoại lai cực đoan (lỗi hệ thống nhập tay hoặc hàng bị giữ pháp lý quá lâu)
+dwell_data = {
+    'Container_ID': [f"C_{i:03d}" for i in range(1, 11)],
+    'Dwell_Days': [3.5, 4.2, 5.0, 3.1, 450.0, 3.8, 4.9, 0.1, 4.0, 420.0] # 450.0 và 420.0 là các ngoại lai cực đoan
+}
+df_dwell = pd.DataFrame(dwell_data)
+print("--- Dữ liệu thời gian lưu bãi gốc ---")
+print(df_dwell)
 
-# 2. Triển khai phương pháp IQR
-Q1 = df_bio['Nong_do_Protein'].quantile(0.25)
-Q3 = df_bio['Nong_do_Protein'].quantile(0.75)
+# 2. Áp dụng phương pháp IQR để tính toán ngưỡng chặn
+Q1 = df_dwell['Dwell_Days'].quantile(0.25)
+Q3 = df_dwell['Dwell_Days'].quantile(0.75)
 IQR = Q3 - Q1
 
 lower_bound = Q1 - 1.5 * IQR
 upper_bound = Q3 + 1.5 * IQR
 
-print(f"Khoảng giá trị chấp nhận được (IQR): [{round(lower_bound, 2)}, {round(upper_bound, 2)}]")
+print(f"\nPhạm vi IQR: {round(IQR, 3)}")
+print(f"Ngưỡng lọc hợp lệ: [{round(lower_bound, 3)} ngày, {round(upper_bound, 3)} ngày]")
 
-# 3. Xác định các giá trị ngoại lai
-outliers = df_bio[(df_bio['Nong_do_Protein'] < lower_bound) | (df_bio['Nong_do_Protein'] > upper_bound)]
-print("Các quan sát ngoại lai phát hiện được:\n", outliers)
+# 3. Lọc bỏ các dòng ngoại lai ra khỏi bộ dữ liệu sạch
+df_clean_dwell = df_dwell[
+    (df_dwell['Dwell_Days'] >= lower_bound) & 
+    (df_dwell['Dwell_Days'] <= upper_bound)
+]
 
-# 4. Lọc sạch dữ liệu bằng cách loại bỏ ngoại lai
-df_cleaned = df_bio[(df_bio['Nong_do_Protein'] >= lower_bound) & (df_bio['Nong_do_Protein'] <= upper_bound)]
-print("\nDữ liệu sau khi loại bỏ ngoại lai:\n", df_cleaned)
+print("\n--- Dữ liệu sạch sau khi loại bỏ ngoại lai ---")
+print(df_clean_dwell)
 ```
 
 #### 3. Cách đọc kết quả & Diễn giải trong bài báo
-* **Kết quả đầu ra của code:** Xác định được giá trị `100.5` và `1.2` nằm ngoài khoảng IQR chấp nhận được ($[10.15, 15.95]$) và loại bỏ chúng thành công khỏi tập dữ liệu sạch.
-* **Cách viết vào bài báo khoa học (Phần Làm sạch Dữ liệu - Outliers Filtering):**
-  > "Outlier detection was performed on biological concentrations using the Interquartile Range (IQR) method to eliminate potential instrumental measurement errors. Statistical outliers were defined as observations falling outside the range $[Q_1 - 1.5 \times IQR, Q_3 + 1.5 \times IQR]$. Consequently, two extreme anomalies (1.2 and 100.5) were identified and excluded from the downstream modeling to prevent model distortion."
+*   **Kết quả đầu ra của code:**
+    Phương pháp IQR tính toán dải dữ liệu lưu bãi hợp lệ nằm trong khoảng từ `1.625` đến `6.625` ngày. Hai container `C_005` (450 ngày) và `C_010` (420 ngày) cùng container lấy hàng siêu nhanh `C_008` (0.1 ngày) lập tức bị loại bỏ khỏi DataFrame sạch.
+*   **Cách viết vào bài báo khoa học (Phần Outlier Detection and Purging):**
+    > "To protect the predictive accuracy of the subsequent regression algorithms, severe outliers in the container dwell time records were detected and purged. Due to the highly right-skewed distribution of storage durations, the non-parametric Interquartile Range (IQR) method was prioritized. The bounds were set at:
+    > $$[Q_1 - 1.5 \cdot IQR, Q_3 + 1.5 \cdot IQR]$$
+    > Records falling outside this interval, including long-term legal hold durations ($>400$ days) and instant gate-transits ($<0.5$ days), were systematically excluded as operational noise."
 
 ---
 
-### [Bài 3.4] Chuẩn hóa dữ liệu (Standardization & Normalization)
+### [Bài 3.4] Hợp nhất Dữ liệu (Data Merging & Joins)
 
 #### 1. Lý thuyết cốt lõi
-Các mô hình máy học dựa trên khoảng cách (như Support Vector Machine, K-Nearest Neighbors) hoặc mô hình tối ưu bằng Gradient Descent (như Hồi quy tuyến tính, Logistic Regression, Mạng Nơ-ron) cực kỳ nhạy cảm với thang đo của biến. 
-*   Ví dụ: Biến "Thu nhập" tính bằng triệu USD có thang đo lớn hơn hàng triệu lần so với biến "Tuổi". Nếu không chuẩn hóa, mô hình sẽ mặc định biến "Thu nhập" quan trọng hơn và bỏ qua biến "Tuổi".
+Thông tin vận hành cảng thường bị phân mảnh trên nhiều phân hệ cơ sở dữ liệu độc lập. Để xây dựng mô hình máy học, ta phải tập hợp chúng thành một DataFrame duy nhất qua các khóa liên kết chung bằng hàm `pd.merge()`:
+*   **Inner Join (Hợp nhất giao):** Chỉ giữ lại các dòng có khóa xuất hiện ở cả hai bảng dữ liệu.
+*   **Left Join (Hợp nhất trái):** Giữ lại toàn bộ dữ liệu ở bảng bên trái và ghép các cột tương thích ở bảng bên phải (nếu không có sẽ điền `NaN`).
 
-**Kỹ thuật xử lý:**
-1.  **Normalization (Min-Max Scaling):** Chuyển đổi dữ liệu về đoạn $[0, 1]$.
-    $$X_{scaled} = \frac{X - X_{min}}{X_{max} - X_{min}}$$
-    *Khuyên dùng:* Khi dữ liệu không phân phối chuẩn, không có giá trị ngoại lai quá lớn.
-2.  **Standardization (Z-score Scaling):** Chuyển đổi dữ liệu sao cho trung bình bằng 0, độ lệch chuẩn bằng 1.
-    $$X_{standardized} = \frac{X - \mu}{\sigma}$$
-    *Khuyên dùng:* Khi dữ liệu tuân theo phân phối chuẩn, mô hình máy học giả định phân phối chuẩn (ví dụ: Linear Regression, SVM).
+```
+ [Bảng Lịch Tàu: Vessel_ID | ETA]  <──(pd.merge)──>  [Bảng Hàng Hóa: Vessel_ID | Teu_Qty]
+```
 
 #### 2. Code mẫu thực hành (Google Colab)
 ```python
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
 
-# 1. Tạo tập dữ liệu khảo sát kinh tế - sinh học
-data_raw = {
-    'Tuoi': [25, 45, 35, 50, 22],               # Thang đo 20 - 50
-    'Thu_Nhap_USD': [15000, 85000, 45000, 95000, 12000] # Thang đo 12000 - 95000
+# 1. Bảng dữ liệu "Lịch Tàu" (Vessel Berth Schedule)
+vessel_schedule = {
+    'Vessel_ID': ['V_A1', 'V_B2', 'V_C3', 'V_D4'],
+    'ETA_Time': ['2026-07-02 06:00', '2026-07-02 14:00', '2026-07-03 08:30', '2026-07-03 22:00'],
+    'Berth_No': [1, 2, 1, 3]
 }
-df_scaled = pd.DataFrame(data_raw)
+df_vessel = pd.DataFrame(vessel_schedule)
 
-# 2. Áp dụng Chuẩn hóa Min-Max (Normalization)
-min_max_scaler = MinMaxScaler()
-df_normalized = pd.DataFrame(
-    min_max_scaler.fit_transform(df_scaled), 
-    columns=['Tuoi_Normalized', 'Thu_Nhap_Normalized']
-)
+# 2. Bảng dữ liệu "Tờ khai Hàng hóa" (Cargo Declaration)
+cargo_manifest = {
+    'Vessel_ID': ['V_A1', 'V_B2', 'V_C3'], # Thiếu thông tin hàng của tàu V_D4
+    'Carrier_Name': ['MSC', 'CMA CGM', 'Maersk'],
+    'Teu_Count': [450, 890, 1200]
+}
+df_cargo = pd.DataFrame(cargo_manifest)
 
-# 3. Áp dụng Chuẩn hóa Z-score (Standardization)
-standard_scaler = StandardScaler()
-df_standardized = pd.DataFrame(
-    standard_scaler.fit_transform(df_scaled), 
-    columns=['Tuoi_Standardized', 'Thu_Nhap_Standardized']
-)
+# 3. Tiến hành kết nối hai bảng dữ liệu dựa vào khóa chính 'Vessel_ID'
+# Sử dụng Inner Join để đảm bảo dữ liệu có cả lịch tàu lẫn số lượng hàng
+df_inner = pd.merge(df_cargo, df_vessel, on='Vessel_ID', how='inner')
 
-# Kết xuất so sánh
-comparison_df = pd.concat([df_scaled, df_normalized, df_standardized], axis=1)
-print(comparison_df.round(3))
+# Tính toán chỉ số phụ trợ: Năng lượng xếp dỡ dự kiến tại bến
+print("--- Kết quả Hợp nhất Dữ liệu (Inner Join) ---")
+print(df_inner)
 ```
 
 #### 3. Cách đọc kết quả & Diễn giải trong bài báo
-* **Kết quả đầu ra của code:** In ra bảng so sánh các giá trị gốc, giá trị normalized về khoảng $[0, 1]$, và giá trị standardized xoay quanh giá trị 0.
-* **Cách viết vào bài báo khoa học (Phần Kỹ nghệ Đặc trưng - Feature Engineering):**
-  > "To resolve the discrepancies in feature magnitudes and accelerate model convergence, raw inputs (Age and Income) were scaled prior to training. We applied standard Z-score transformation (Standardization) to transform features to have zero mean and unit variance ($\mu=0, \sigma=1$). This step was mandatory for distance-based estimators to prevent biased gradient updates."
+*   **Kết quả đầu ra của code:**
+    Bảng dữ liệu kết hợp chứa đầy đủ thuộc tính của hãng tàu, số lượng container cần bốc xếp và thời điểm cập bến cụ thể của các tàu `V_A1`, `V_B2`, `V_C3`. Tàu `V_D4` bị loại bỏ ở bộ dữ liệu cuối do chưa có tờ khai hàng hóa.
+*   **Cách viết vào bài báo khoa học (Phần Data Integration):**
+    > "To link vessel spatial occupancy with handling requirements, relational joins were performed. The vessel berth planning database and the cargo declaration registry were integrated through an inner join on the unique voyage identification key ($Vessel\_ID$). This procedure produced a consolidated training matrix mapping the ship's physical arrival window directly to its cargo handling capacity (TEUs), eliminating voyages with incomplete manifest profiles."
+
+---
+
+### [Bài 3.5] Đặc trưng hóa / Tạo biến mới (Feature Engineering)
+
+#### 1. Lý thuyết cốt lõi
+Mô hình học máy không thể tự hiểu được ý nghĩa sâu xa của dữ liệu thời gian thô dạng chuỗi hay các số đo liên tục quá vụn vặt. Nhận thức nghiệp vụ cảng cho thấy ta cần **Đặc trưng hóa (Feature Engineering)** để sinh ra các biến số mới:
+*   **Thời gian quay vòng tàu (Turnaround Time - TAT):** Đo lường trực tiếp thời gian giải phóng tàu tại cầu cảng.
+    $$TAT = ATD - ATA$$
+*   **Phân nhóm (Binning):** Nhóm các biến liên tục thành các khoảng phân loại (ví dụ: chia trọng lượng container thành các mức Nhẹ, Trung bình, Nặng để cẩu trục tự chọn chế độ nâng).
+
+```
+ [ATA: 08:00 & ATD: 18:00] ──> [Tính toán: ATD - ATA] ──> [TAT = 10.0 Giờ]
+```
+
+#### 2. Code mẫu thực hành (Google Colab)
+```python
+import pandas as pd
+import numpy as np
+
+# 1. Thiết lập nhật ký thời gian cập bến (ATA) và rời bến (ATD) của tàu
+shipment_logs = {
+    'Vessel_ID': ['V001', 'V002', 'V003'],
+    'ATA': ['2026-07-02 08:00:00', '2026-07-02 12:30:00', '2026-07-03 01:15:00'],
+    'ATD': ['2026-07-02 18:30:00', '2026-07-03 04:45:00', '2026-07-03 14:00:00'],
+    'Container_Weight': [14.5, 28.2, 8.1] # Tấn
+}
+df_features = pd.DataFrame(shipment_logs)
+
+# Chuyển đổi sang kiểu dữ liệu datetime chuyên sâu
+df_features['ATA'] = pd.to_datetime(df_features['ATA'])
+df_features['ATD'] = pd.to_datetime(df_features['ATD'])
+
+# 2. Đặc trưng hóa 1: Tính toán thời gian quay vòng tàu TAT (Giờ)
+df_features['Vessel_Turnaround_Time'] = (df_features['ATD'] - df_features['ATA']).dt.total_seconds() / 3600
+
+# 3. Đặc trưng hóa 2: Phân nhóm (Binning) trọng lượng container thành 3 nhãn phân loại
+# Định nghĩa các khoảng cắt: 0-10 tấn (Nhẹ), 10-22 tấn (Trung bình), 22-35 tấn (Nặng)
+bins = [0, 10, 22, 35]
+labels = ['Light_Weight', 'Medium_Weight', 'Heavy_Weight']
+df_features['Weight_Category'] = pd.cut(df_features['Container_Weight'], bins=bins, labels=labels)
+
+print("--- DataFrame sau khi thực hiện Kỹ nghệ Đặc trưng ---")
+print(df_features[['Vessel_ID', 'Vessel_Turnaround_Time', 'Container_Weight', 'Weight_Category']])
+```
+
+#### 3. Cách đọc kết quả & Diễn giải trong bài báo
+*   **Kết quả đầu ra của code:**
+    Tạo thành công hai biến mới: `Vessel_Turnaround_Time` (ví dụ: tàu V001 có thời gian quay vòng là 10.5 giờ) và biến nhãn phân loại `Weight_Category` (tàu V002 chở container nặng `Heavy_Weight`, tàu V003 chở container nhẹ `Light_Weight`).
+*   **Cách viết vào bài báo khoa học (Phần Feature Engineering - Operational Indicators):**
+    > "Feature engineering was employed to derive high-level indicators from the primary variables. First, vessel Turnaround Time ($TAT$) was calculated as the operational difference between actual departure ($ATD$) and actual arrival ($ATA$) timestamps:
+    > $$TAT = T_{\\text{departure}} - T_{\\text{arrival}}$$
+    > Second, continuous container payloads were categorized into discrete weight brackets (Light, Medium, and Heavy) using boundary cut-offs corresponding to crane load capacities. These engineered inputs provide the predictive models with structured, operational context."
 
 ---
 
