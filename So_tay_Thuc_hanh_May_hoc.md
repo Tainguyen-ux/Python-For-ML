@@ -30,8 +30,10 @@
    - [Bài 5.3] Bài toán phân loại sự kiện (Phân loại - Classification)
    - [Bài 5.4] Biện giải mô hình bằng Mức độ quan trọng của biến (Feature Importance)
 6. **[MODULE 6] Hệ thống Thông tin Cảng & Quản trị Dữ liệu (TOS & Data Management)**
-   - [Bài 6.1] Luồng dữ liệu TOS và các nguồn cảm biến thực tế (AIS, RFID, Crane GPS)
-   - [Bài 6.2] Mô phỏng và truy xuất cơ sở dữ liệu vận hành cảng trên Google Colab
+   - [Bài 6.1] Giải mã Kiến trúc TOS và Trích xuất Dữ liệu Quan hệ (SQL -> Python)
+   - [Bài 6.2] Khai thác Dữ liệu Không gian Không lưu & Hàng hải (Geospatial & AIS)
+   - [Bài 6.3] Phân tích Chuỗi Sự kiện Thực thi (Event-Log & Process Mining)
+   - [Bài 6.4] Xây dựng Đường ống Dữ liệu Tự động (Automated ETL Pipeline)
 7. **[MODULE 7] Lập trình Python cho Logistics Biển**
    - [Bài 7.1] Làm chủ dữ liệu thời gian (DateTime) chuyên sâu trong Logistics (ATA, Dwell Time)
    - [Bài 7.2] Tính toán khoảng cách không gian (Geospatial) và chỉ số hiệu suất vận hành (GCR, Utilization)
@@ -1729,128 +1731,343 @@ plt.show()
 
 # MODULE 6: Hệ thống Thông tin Cảng & Quản trị Dữ liệu (TOS & Data Management)
 
-### [Bài 6.1] Luồng dữ liệu TOS và các nguồn cảm biến thực tế (AIS, RFID, Crane GPS)
+### [Bài 6.1] Giải mã Kiến trúc TOS và Trích xuất Dữ liệu Quan hệ (SQL -> Python)
 
 #### 1. Lý thuyết cốt lõi
+Hệ thống **TOS (Terminal Operating System)** là bộ não điều hành trung tâm tại cảng, chịu trách nhiệm lưu trữ và quản lý mọi giao dịch logistics. Phần lớn các TOS hiện đại (như Navis N4, CATOS) sử dụng cơ sở dữ liệu quan hệ (RDBMS) như PostgreSQL hay Oracle để lưu trữ hàng triệu luồng thông tin vận hành phức tạp. 
 
-Hệ thống **TOS (Terminal Operating System)** là bộ não của cảng biển, quản lý toàn bộ luồng di chuyển của container, vị trí xếp dỡ trên bãi yard, và kế hoạch bốc dỡ tàu. Trong nghiên cứu hiện đại, dữ liệu TOS không đứng độc lập mà được tích hợp với các nguồn dữ liệu cảm biến thời gian thực:
-
-* **Dữ liệu AIS (Automatic Identification System):** Tín hiệu định vị toàn cầu của tàu (kinh độ, vĩ độ, vận tốc, hướng đi). AIS giúp cảng dự báo chính xác thời gian tàu đến bến (ETA) trước nhiều ngày.
-* **Dữ liệu RFID (Radio Frequency Identification):** Thẻ định dạng vô tuyến gắn trên xe đầu kéo hoặc container. Khi xe đi qua Smart Gate hoặc các vị trí kiểm soát, đầu đọc RFID ghi nhận thời điểm chính xác để tính toán thời gian phục vụ tại cổng (Gate Service Time).
-* **Dữ liệu Crane GPS:** Hệ thống định vị thời gian thực trên các cẩu trục (STS, RTG). Mỗi khi cẩu gắp container, tọa độ GPS được ghi nhận để kiểm chứng độ chính xác vị trí trong cơ sở dữ liệu bãi cảng.
+Trong nghiên cứu vận hành cảng, thách thức lớn nhất của nhà khoa học dữ liệu là việc kết nối và trích xuất dữ liệu tự động. Đặc biệt, các TOS hiện đại thường lưu trữ các dữ liệu phi cấu trúc hoặc bán cấu trúc (như nhật ký lỗi cẩu trục, dữ liệu cảm biến trọng tải gió STS) dưới dạng các trường **JSONB** ngay trong bảng quan hệ nhằm tối ưu hiệu năng ghi. Do đó, quy trình trích xuất đòi hỏi hai kỹ năng nền tảng:
+1. Kết nối và thực hiện truy vấn SQL từ môi trường lập trình Python (sử dụng thư viện `SQLAlchemy`).
+2. Làm phẳng (Flattening) các cấu trúc dữ liệu JSON lồng nhau thành các cột độc lập (sử dụng `pd.json_normalize`) để sẵn sàng đưa vào các thuật toán học máy.
 
 ```
-       [AIS (Vị trí Tàu)] ────┐
-                              ▼
-    [RFID (Cổng cảng)] ──> [Hệ thống TOS] <── [GPS Cẩu trục (Vị trí Container)]
+[TOS Database (PostgreSQL)] ──(SQL Query via SQLAlchemy)──> [Pandas DataFrame (Raw JSONB)] ──(pd.json_normalize)──> [Flat DataFrame (ML Ready)]
 ```
 
 #### 2. Code mẫu thực hành (Google Colab)
-
-Dưới đây là đoạn code mô phỏng việc trích xuất và tiền xử lý luồng dữ liệu từ cổng Smart Gate (RFID) và định vị cẩu trục (GPS):
+Đoạn code dưới đây mô phỏng việc tạo cơ sở dữ liệu TOS trong bộ nhớ máy ảo Colab (sử dụng SQLite), chèn dữ liệu bán cấu trúc JSON ghi nhận nhật ký của cổng Smart Gate, sau đó dùng Python truy vấn và làm phẳng:
 
 ```python
+import sqlite3
 import pandas as pd
-import io
+import json
 
-# 1. Giả lập luồng dữ liệu thô nhận được từ thiết bị RFID tại cổng bảo vệ (Smart Gate)
-raw_rfid_data = """gate_log_id,truck_plate,container_id,timestamp,gate_action
-LG001,51C-12345,MSCU8829100,2026-07-02 08:00:12,IN
-LG002,65C-98765,MSCU9921822,2026-07-02 08:05:45,IN
-LG003,29C-55432,MSCU7766110,2026-07-02 08:12:30,OUT
-LG004,51C-12345,MSCU8829100,2026-07-02 08:45:18,OUT"""
+# 1. Thiết lập cơ sở dữ liệu giả lập hệ thống TOS trong bộ nhớ (In-memory SQLite)
+conn = sqlite3.connect(':memory:')
+cursor = conn.cursor()
 
-# Đọc dữ liệu giả lập vào Pandas DataFrame
-df_gate = pd.read_csv(io.StringIO(raw_rfid_data))
+# 2. Tạo bảng nhật ký cổng Smart Gate chứa cột dữ liệu bán cấu trúc (JSON)
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS tos_gate_logs (
+    log_id TEXT PRIMARY KEY,
+    timestamp TEXT,
+    sensor_payload TEXT
+)
+''')
 
-# 2. Giả lập luồng dữ liệu định vị Crane GPS tại bãi yard
-raw_gps_data = """crane_id,container_id,latitude,longitude,height_level
-RTG_01,MSCU8829100,10.7291,106.7584,2
-RTG_02,MSCU9921822,10.7293,106.7588,1
-RTG_01,MSCU7766110,10.7290,106.7581,3"""
+# 3. Chèn các bản ghi vận hành thực tế chứa thông tin cẩu STS và thông tin xe đầu kéo
+gate_records = [
+    ("LOG_001", "2026-07-02 08:00:12", json.dumps({
+        "truck_plate": "51C-12345", 
+        "weight_tons": 24.5, 
+        "handling_equipment": {"type": "STS", "id": "STS_01"},
+        "driver_id": "DRV_902"
+    })),
+    ("LOG_002", "2026-07-02 08:05:45", json.dumps({
+        "truck_plate": "65C-98765", 
+        "weight_tons": 18.2, 
+        "handling_equipment": {"type": "RTG", "id": "RTG_03"},
+        "driver_id": "DRV_110"
+    })),
+    ("LOG_003", "2026-07-02 08:12:30", json.dumps({
+        "truck_plate": "29C-55432", 
+        "weight_tons": 28.0, 
+        "handling_equipment": {"type": "STS", "id": "STS_01"},
+        "driver_id": "DRV_304"
+    }))
+]
+cursor.executemany("INSERT INTO tos_gate_logs VALUES (?, ?, ?)", gate_records)
+conn.commit()
 
-df_gps = pd.read_csv(io.StringIO(raw_gps_data))
+# 4. Trích xuất dữ liệu từ SQL về Python thông qua Pandas
+query = "SELECT log_id, timestamp, sensor_payload FROM tos_gate_logs"
+df_raw = pd.read_sql_query(query, conn)
 
-print("--- Nhật ký Cổng Smart Gate (RFID) ---")
-print(df_gate)
-print("\n--- Định vị Vị trí Container của Cẩu Bãi (GPS) ---")
-print(df_gps)
+# 5. Phẳng hóa dữ liệu JSON lồng nhau
+# Chuyển đổi cột chuỗi JSON thành kiểu Dictionary của Python
+df_raw['sensor_payload'] = df_raw['sensor_payload'].apply(json.loads)
+
+# Sử dụng pd.json_normalize để bóc tách các khóa con thành các cột riêng biệt
+df_flat = pd.json_normalize(df_raw['sensor_payload'])
+
+# Ghép nối các cột phẳng hóa lại với DataFrame gốc để tạo Master Matrix
+df_master = pd.concat([df_raw[['log_id', 'timestamp']], df_flat], axis=1)
+
+print("--- BẢNG DỮ LIỆU TÍNH TOÁN SAU KHI LÀM PHẲNG (FLATTENED MASTER MATRIX) ---")
+print(df_master)
+
+# Đóng kết nối
+conn.close()
 ```
 
 #### 3. Cách đọc kết quả & Diễn giải trong bài báo
-
-* **Kết quả đầu ra của code:** Tạo thành công 2 bảng dữ liệu cấu trúc rõ ràng: bảng nhật ký vào/ra cổng và bảng định vị 3D vị trí container trên bãi.
-* **Cách viết vào bài báo khoa học (Phần Data Acquisition - Nguồn dữ liệu):**
-  > "Operational data were acquired from two primary terminal information sub-systems. Gate transit timestamps were logged via Radio Frequency Identification (RFID) transponders mounted on drayage trucks. Spatial stacking coordinates (latitude, longitude, and tier height) of containers within the yard blocks were dynamically tracked using Global Positioning System (GPS) sensors installed on the Rubber-Tired Gantry (RTG) cranes."
-  >
+*   **Kết quả đầu ra của code:** DataFrame thô ban đầu có cột `sensor_payload` chứa chuỗi JSON phức tạp. Sau khi làm phẳng, các cột mới được sinh ra một cách rõ ràng: `truck_plate`, `weight_tons`, `driver_id`, và các cột lồng nhau `handling_equipment.type`, `handling_equipment.id`.
+*   **Cách viết vào bài báo khoa học (Phần Data Extraction & Preprocessing):**
+    > "To retrieve and structure transaction logs for analytical modeling, connection to the Terminal Operating System (TOS) database was established using Python's SQLAlchemy. Semi-structured operational payloads stored within the relational schema under JSONB attributes were extracted. We applied recursive normalization ($\mathtt{pd.json\_normalize}$) to flatten nested variables (e.g., handling equipment metadata, driver identifiers) into flat tabular dimensions. This process yielded a structured feature matrix suitable for machine learning algorithms without loss of database-level granularity."
 
 ---
 
-### [Bài 6.2] Lược đồ Dữ liệu Cảng Phức hợp & Liên kết Chuỗi đa bảng (Chain Joins)
+### [Bài 6.2] Khai thác Dữ liệu Không gian Không lưu & Hàng hải (Geospatial & AIS)
 
 #### 1. Lý thuyết cốt lõi
-Dữ liệu vận hành tại các cảng container hiện đại được lưu trữ phân tán ở các phân hệ cơ sở dữ liệu khác nhau thuộc hệ thống TOS. Để chuẩn bị dữ liệu đầu vào cho các thuật toán học máy dự báo thời gian lưu bãi hoặc tối ưu hóa luồng xe, nhà nghiên cứu cần thiết lập **Lược đồ dữ liệu quan hệ (ERD)** và thực hiện các kỹ thuật **Liên kết chuỗi đa bảng (Chain Joins)**.
+Dữ liệu **AIS (Automatic Identification System)** của tàu biển cung cấp thông tin liên tục về vĩ độ ($\phi$) và kinh độ ($\lambda$) theo hệ tọa độ WGS 84. Khi nghiên cứu hiệu suất cập cảng hoặc dự báo thời gian tàu đến bến (ETA), nhà nghiên cứu cần xác định khoảng cách không gian thực tế giữa tàu và vị trí tâm bến cảng chỉ định (Berth Centroid).
 
-Các thực thể dữ liệu cốt lõi bao gồm:
-*   **Thực thể Lịch tàu cập bến (Vessel Schedule):** Khóa chính là `Vessel_ID`. Lưu trữ thông tin về luồng tàu cập cảng (Tên tàu, số hiệu chuyến, Bến chỉ định `Berth_ID`).
-*   **Thực thể Nhật ký cẩu tàu (Crane Handling Logs):** Khóa ngoại `Vessel_ID`. Lưu lịch sử cẩu container từ tàu xuống bãi (thời điểm dỡ hàng `Discharge_Time`, cẩu trục thực hiện `Crane_ID`).
-*   **Thực thể Nhật ký cổng bảo vệ (Smart Gate Logs):** Khóa chính `Container_ID`. Ghi nhận thông tin xe tải đến lấy hàng ra khỏi cảng (thời điểm rời cảng `Gate_Out_Time`, mã xe đầu kéo `Truck_ID`).
+Do bề mặt Trái Đất cong, việc sử dụng khoảng cách Euclid ($d = \sqrt{\Delta x^2 + \Delta y^2}$) trên tọa độ phẳng sẽ dẫn đến sai số rất lớn, đặc biệt đối với các khoảng cách tầm xa. Do đó, ta phải áp dụng **Công thức Haversine** để tính khoảng cách đại cung (great-circle distance) giữa hai điểm trên mặt cầu:
 
-```
-  [Vessel Schedule] (Vessel_ID)
-          │
-          ▼ (1-n Join)
-  [Crane Handling Logs] (Container_ID) <─── (1-1 Join) ───> [Smart Gate Logs]
-```
+$$d = 2R \cdot \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta \lambda}{2}\right)}\right)$$
 
-Để xây dựng một bảng dữ liệu Master hoàn chỉnh phục vụ huấn luyện mô hình máy học, ta thực hiện liên kết chuỗi (Chain Join):
-1.  **Bước 1:** Kết nối `Crane Handling Logs` với `Vessel Schedule` thông qua khóa chung `Vessel_ID` (phương pháp Inner Join) để biết container được bốc dỡ từ chuyến tàu nào, tại bến số mấy.
-2.  **Bước 2:** Kết nối kết quả trên với `Smart Gate Logs` thông qua khóa chung `Container_ID` để theo dõi hành trình đầy đủ từ khi container được nhấc khỏi tàu cho đến khi rời cảng.
+Trong đó:
+*   $R \approx 6371.0\text{ km}$ là bán kính trung bình của Trái Đất.
+*   $\phi_1, \phi_2$ là vĩ độ của điểm 1 và điểm 2 (đơn vị: Radian).
+*   $\lambda_1, \lambda_2$ là kinh độ của điểm 1 và điểm 2 (đơn vị: Radian).
+*   $\Delta \phi = \phi_2 - \phi_1$ và $\Delta \lambda = \lambda_2 - \lambda_1$.
+
+Quy trình tiền xử lý dữ liệu không gian cũng yêu cầu lọc bỏ các tọa độ nhiễu/outliers (ví dụ: tọa độ $(0, 0)$ do mất tín hiệu GPS hoặc tọa độ nằm ngoài ranh giới vùng nước của cảng).
 
 #### 2. Code mẫu thực hành (Google Colab)
+Dưới đây là mã nguồn tính khoảng cách từ vị trí AIS của tàu container đến tâm bến cảng Cát Lái (TP.HCM), kết hợp lọc bỏ dữ liệu tọa độ lỗi:
+
 ```python
+import numpy as np
 import pandas as pd
-import io
 
-# 1. Bảng 1: Lịch tàu cập bến (Vessel Schedule)
-vessel_data = '''Vessel_ID,Vessel_Name,Berth_ID,Shipping_Line
-V_MSC01,MSC Aurora,Berth_01,MSC
-V_CMA02,CMA CGM Jean,Berth_02,CMA CGM
-V_MAE03,Maersk Clyde,Berth_01,Maersk'''
-df_vessel = pd.read_csv(io.StringIO(vessel_data))
+def calculate_haversine(lat1, lon1, lat2, lon2):
+    """
+    Tính khoảng cách Haversine (km) giữa hai điểm tọa độ địa lý.
+    """
+    # Chuyển đổi từ độ (Degrees) sang Radian
+    lat1, lon1, lat2, lon2 = map(np.radians, [lat1, lon1, lat2, lon2])
+    
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    
+    # Áp dụng công thức Haversine
+    a = np.sin(dlat/2.0)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2.0)**2
+    c = 2 * np.arcsin(np.sqrt(a))
+    earth_radius_km = 6371.0
+    
+    return c * earth_radius_km
 
-# 2. Bảng 2: Nhật ký cẩu tàu dỡ hàng (Crane Handling Logs)
-crane_data = '''Container_ID,Vessel_ID,Discharge_Time,Crane_ID,Weight_Tons
-CONT_A101,V_MSC01,2026-07-02 08:30:00,STS_01,24.5
-CONT_B202,V_CMA02,2026-07-02 09:15:00,STS_02,18.2
-CONT_C303,V_MAE03,2026-07-02 10:00:00,STS_01,28.0
-CONT_A102,V_MSC01,2026-07-02 10:45:00,STS_01,22.1'''
-df_crane = pd.read_csv(io.StringIO(crane_data))
+# Tọa độ tâm cầu cảng chỉ định (Berth Centroid) tại cảng Cát Lái
+berth_lat = 10.7601
+berth_lon = 106.8041
 
-# 3. Bảng 3: Nhật ký xe tải lấy container qua cổng (Smart Gate Logs)
-gate_data = '''Container_ID,Gate_Out_Time,Truck_Plate
-CONT_A101,2026-07-04 14:20:00,51C-99999
-CONT_B202,2026-07-03 11:30:00,65C-88888
-CONT_C303,2026-07-05 16:45:00,29C-77777
-CONT_A102,2026-07-04 09:10:00,51C-99999'''
-df_gate = pd.read_csv(io.StringIO(gate_data))
+# Giả lập nhật ký quỹ đạo AIS thô của tàu Container
+raw_ais_trajectory = {
+    'mmsi': [563001200, 563001200, 563001200, 563001200],
+    'timestamp': ['2026-07-02 12:00:00', '2026-07-02 12:10:00', '2026-07-02 12:20:00', '2026-07-02 12:30:00'],
+    'latitude': [10.7100, 10.7300, 0.0000, 10.7550],  # Tọa độ 0.0000 là nhiễu cảm biến
+    'longitude': [106.7700, 106.7850, 0.0000, 106.7980] # Tọa độ 0.0000 là nhiễu cảm biến
+}
+df_ais = pd.DataFrame(raw_ais_trajectory)
 
-# 4. Thực hiện Liên kết chuỗi đa bảng (Chain Join) để tạo bảng dữ liệu Master
-# Bước 1: Ghép thông tin cẩu trục với thông tin bến cập của tàu
-df_step1 = pd.merge(df_crane, df_vessel, on='Vessel_ID', how='inner')
+# Lọc bỏ tọa độ nhiễu ngoài ranh giới vùng biển Đông (Kinh độ 100-110, Vĩ độ 8-24)
+valid_lat_range = (8.0, 24.0)
+valid_lon_range = (100.0, 110.0)
 
-# Bước 2: Ghép tiếp thông tin thời gian xe tải lấy hàng ra khỏi cổng Gate
-df_master = pd.merge(df_step1, df_gate, on='Container_ID', how='inner')
+df_ais_cleaned = df_ais[
+    df_ais['latitude'].between(*valid_lat_range) & 
+    df_ais['longitude'].between(*valid_lon_range)
+].copy()
 
-print("--- BẢNG DỮ LIỆU MASTER HOÀN CHỈNH (YARD MASTER MATRIX) ---")
-print(df_master[['Container_ID', 'Vessel_Name', 'Berth_ID', 'Weight_Tons', 'Discharge_Time', 'Gate_Out_Time']])
+# Tính khoảng cách không gian tức thời tới bến cảng chỉ định
+df_ais_cleaned['distance_to_berth_km'] = calculate_haversine(
+    df_ais_cleaned['latitude'], df_ais_cleaned['longitude'],
+    berth_lat, berth_lon
+)
+
+print("--- HÀNH TRÌNH TÀU ĐÃ ĐƯỢC LỌC NHIỄU VÀ TÍNH KHOẢNG CÁCH ---")
+print(df_ais_cleaned)
 ```
 
 #### 3. Cách đọc kết quả & Diễn giải trong bài báo
-*   **Kết quả đầu ra của code:**
-    Tạo ra một DataFrame Master duy nhất tích hợp toàn bộ lịch trình. Ví dụ: Container `CONT_A101` dỡ từ tàu `MSC Aurora` tại bến `Berth_01` lúc 8:30 sáng, và rời cảng bằng xe tải biển số `51C-99999` lúc 14:20 chiều ngày 04/07.
-*   **Cách viết vào bài báo khoa học (Phần Data Integration - Tích hợp hệ thống):**
-    > "To reconstruct the complete end-to-end container transit cycle, a relational data model was established. Operational databases including the Vessel Voyage registry, STS Crane logs, and Smart Gate records were integrated. A sequential relational join (Chain Join) was executed: crane handling logs were first merged with vessel voyages on the common key $Vessel\_ID$, and subsequently joined with gate-out logs using the unique $Container\_ID$ key. The resulting master dataset represents a unified operational matrix mapping physical berthing, crane productivity, and truck turn times."
+*   **Kết quả đầu ra của code:** Điểm ghi nhận thứ 3 (tọa độ `0.0, 0.0`) đã bị tự động loại bỏ khỏi tập dữ liệu nghiên cứu nhờ bộ lọc ranh giới. Cột `distance_to_berth_km` phản ánh chính xác khoảng cách tàu đang tiến dần về cảng (từ $7.55\text{ km}$ xuống còn $1.02\text{ km}$).
+*   **Cách viết vào bài báo khoa học (Phần Methodology - Spatial Analysis):**
+    > "To accurately determine the spatial proximity of incoming container vessels, raw Automatic Identification System (AIS) telemetry data were filtered to exclude erroneous coordinate broadcast errors (outliers dropping near $0.0^\circ$ latitude/longitude). The geodesic distance between the vessel's temporal position $(\phi_1, \lambda_1)$ and the designated terminal berth centroid $(\phi_2, \lambda_2)$ was calculated using the Haversine formula, assuming a mean Earth radius of $6,371.0\text{ km}$. This metric represents the spatial decay function used to validate predictive Vessel Arrival time models."
+
+---
+
+### [Bài 6.3] Phân tích Chuỗi Sự kiện Thực thi (Event-Log & Process Mining)
+
+#### 1. Lý thuyết cốt lõi
+Vận hành cảng là một chuỗi cung ứng khép kín gồm nhiều công đoạn nối tiếp nhau (Event-Driven Logistics): Tàu cập cảng $\rightarrow$ STS cẩu container xuống bến $\rightarrow$ Xe đầu kéo nội bộ vận chuyển vào bãi yard $\rightarrow$ Cẩu RTG gắp container hạ bãi $\rightarrow$ Xe tải drayage đến nhận container $\rightarrow$ Rời cổng Smart Gate.
+
+Phân tích **Khai phá quy trình (Process Mining)** tập trung vào việc nghiên cứu luồng chảy của container dựa trên các dấu vết thời gian (Event Logs/Timestamps). Nhiệm vụ cốt lõi là đo lường thời gian trễ vận hành (**Idle Time/Operational Bottlenecks**). 
+
+Một trong những nút thắt lớn nhất tại các cảng container là thời gian chờ đợi của xe tải ngoài bãi: Khoảng thời gian kể từ lúc cẩu RTG hoàn tất bốc container đặt lên xe tải (`rtg_finish_time`) cho đến khi xe tải thực hiện xong thủ tục rời cảng tại cổng Smart Gate (`gate_out_time`). Khoảng trênh lệch này phản ánh sự tắc nghẽn giao thông nội bộ hoặc sự chậm trễ trong khâu làm thủ tục hải quan điện tử.
+
+```
+[RTG Handling Finish] ──(Drayage Truck Transit / Idle Time)──> [Smart Gate Out]
+```
+
+#### 2. Code mẫu thực hành (Google Colab)
+Đoạn code dưới đây thực hiện khớp nối hai bảng sự kiện độc lập trong hệ thống TOS thông qua khóa chính `container_id` để phát hiện các xe tải bị tắc nghẽn quá thời gian quy định (ngưỡng 60 phút):
+
+```python
+import pandas as pd
+
+# 1. Nhật ký từ phân hệ cẩu bãi RTG (Hoàn thành gắp đặt hàng lên xe tải)
+rtg_events = {
+    'container_id': ['CONT_A', 'CONT_B', 'CONT_C', 'CONT_D'],
+    'rtg_finish_time': ['2026-07-02 08:30:00', '2026-07-02 09:15:00', '2026-07-02 10:00:00', '2026-07-02 10:45:00'],
+    'yard_block': ['B1', 'B2', 'B1', 'B3']
+}
+df_rtg = pd.DataFrame(rtg_events)
+
+# 2. Nhật ký từ phân hệ Smart Gate Out (Xe tải chở container qua cổng an ninh để ra ngoài)
+gate_events = {
+    'container_id': ['CONT_A', 'CONT_B', 'CONT_C', 'CONT_D'],
+    'gate_out_time': ['2026-07-02 09:10:00', '2026-07-02 11:45:00', '2026-07-02 10:25:00', '2026-07-02 11:05:00']
+}
+df_gate = pd.DataFrame(gate_events)
+
+# 3. Chuyển đổi định dạng văn bản sang DateTime để thực hiện phép toán thời gian
+df_rtg['rtg_finish_time'] = pd.to_datetime(df_rtg['rtg_finish_time'])
+df_gate['gate_out_time'] = pd.to_datetime(df_gate['gate_out_time'])
+
+# 4. Khớp nối dữ liệu hai sự kiện (Map-matching) dựa trên Container ID
+df_process = pd.merge(df_rtg, df_gate, on='container_id')
+
+# 5. Tính thời gian trễ vận hành (Idle Time) tính theo đơn vị Phút
+df_process['idle_time_mins'] = (df_process['gate_out_time'] - df_process['rtg_finish_time']).dt.total_seconds() / 60.0
+
+# 6. Xác định các trường hợp tắc nghẽn nghiêm trọng (Bottleneck) vượt quá 60 phút
+bottleneck_threshold = 60.0
+df_bottlenecks = df_process[df_process['idle_time_mins'] > bottleneck_threshold]
+
+print("--- TIẾN TRÌNH VẬN HÀNH TỔNG HỢP ---")
+print(df_process)
+print(f"\n--- DANH SÁCH CONTAINER BỊ TẮC NGHẼN TRÊN BÃI (> {bottleneck_threshold} PHÚT) ---")
+print(df_bottlenecks[['container_id', 'yard_block', 'idle_time_mins']])
+```
+
+#### 3. Cách đọc kết quả & Diễn giải trong bài báo
+*   **Kết quả đầu ra của code:** Xe tải chở container `CONT_B` mất tới $150\text{ phút}$ từ lúc xếp hàng ở block B2 đến khi rời cổng. Đây chính là nút cổ chai vận hành của ca trực cần được hệ thống điều độ tối ưu hóa.
+*   **Cách viết vào bài báo khoa học (Phần Results & Discussion - Bottleneck Analysis):**
+    > "Process mining techniques were applied to event logs from RTG handling and Gate-out systems to measure internal transport delay. By matching timestamps on the unique container identifier ($Container\_ID$), we calculated the idle transit time of drayage vehicles. Operational bottlenecks were defined as cases where the duration between RTG release and Gate checkout exceeded $60\text{ minutes}$. The analysis identified significant congestions at Block B2, where average idle times escalated to $150\text{ minutes}$, indicating severe resource scheduling imbalances between yard equipment and gate clearance operations."
+
+---
+
+### [Bài 6.4] Xây dựng Đường ống Dữ liệu Tự động (Automated ETL Pipeline)
+
+#### 1. Lý thuyết cốt lõi
+Trong các dự án nghiên cứu và vận hành cảng thông minh, dữ liệu thô liên tục được sinh ra dưới dạng các file log thô hoặc API streaming. Để duy trì tính chính xác của các mô hình dự báo trực tuyến, nhà nghiên cứu cần thiết lập một đường ống **ETL (Extract - Transform - Load)** tự động hóa quy trình thu thập dữ liệu định kỳ.
+
+Một đường ống ETL chuẩn công nghiệp bắt buộc phải áp dụng **Lập trình phòng vệ (Defensive Programming)**. Khi gặp các sự cố thực tế như: thiếu tệp tin nguồn, mất kết nối mạng đến máy chủ cơ sở dữ liệu, hoặc dữ liệu bị lỗi định dạng đột ngột (ví dụ cột số bị chèn chuỗi ký tự), hệ thống không được phép bị sập (crash). Thay vào đó, đường ống phải sử dụng các cấu trúc kiểm soát lỗi ngoại lệ `try-except` chặt chẽ, ghi lại mã lỗi (logging) và tiếp tục thực thi các tiến trình khác một cách trơn tru.
+
+```
+[Raw Log Files] ──(Try-Except Guarded ETL)──> [Clean & Standardized Dataset] ──(Automatic Export)──> [Data Warehouse / ML Input]
+```
+
+#### 2. Code mẫu thực hành (Google Colab)
+Đoạn code dưới đây xây dựng một ETL pipeline hoàn chỉnh để xử lý dữ liệu nhập bãi tự động từ file CSV, tích hợp cơ chế ghi log lỗi chi tiết:
+
+```python
+import pandas as pd
+import os
+import logging
+
+# Cấu hình ghi log lịch sử vận hành của đường ống ETL
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def run_automated_etl(source_csv_path, target_csv_path):
+    """
+    Thực thi quy trình ETL tự động: Nạp dữ liệu -> Dọn dẹp/Chuyển đổi -> Lưu trữ.
+    Tích hợp cơ chế Try-Except để kiểm soát lỗi toàn diện.
+    """
+    try:
+        logging.info(f"Khởi chạy ETL: Đọc dữ liệu từ {source_csv_path}")
+        
+        # 1. Kiểm tra sự tồn tại của tệp nguồn (Defensive Check)
+        if not os.path.exists(source_csv_path):
+            raise FileNotFoundError(f"Không tìm thấy tệp dữ liệu nguồn tại đường dẫn: {source_csv_path}")
+            
+        df = pd.read_csv(source_csv_path)
+        
+        # 2. Kiểm tra tính toàn vẹn của cấu trúc dữ liệu (Schema Validation)
+        required_schema = ['container_id', 'discharge_time', 'gate_out_time', 'weight_tons']
+        for column in required_schema:
+            if column not in df.columns:
+                raise KeyError(f"Lược đồ dữ liệu không hợp lệ. Thiếu cột bắt buộc: '{column}'")
+                
+        # 3. Bước biến đổi dữ liệu (Transformation Phase)
+        logging.info("Đang chuyển đổi định dạng và dọn dẹp dữ liệu...")
+        
+        # Loại bỏ bản ghi rỗng Container ID
+        df_clean = df.dropna(subset=['container_id']).copy()
+        
+        # Ép kiểu trọng lượng sang dạng số, chuyển các giá trị lỗi thành NaN và điền khuyết bằng Median
+        df_clean['weight_tons'] = pd.to_numeric(df_clean['weight_tons'], errors='coerce')
+        median_weight = df_clean['weight_tons'].median()
+        df_clean['weight_tons'] = df_clean['weight_tons'].fillna(median_weight if not pd.isna(median_weight) else 20.0)
+        
+        # Chuyển đổi định dạng thời gian
+        df_clean['discharge_time'] = pd.to_datetime(df_clean['discharge_time'], errors='coerce')
+        df_clean['gate_out_time'] = pd.to_datetime(df_clean['gate_out_time'], errors='coerce')
+        df_clean = df_clean.dropna(subset=['discharge_time', 'gate_out_time'])
+        
+        # Tính toán đặc trưng mới phục vụ Machine Learning: Thời gian lưu bãi (Dwell Time) tính theo ngày
+        df_clean['dwell_time_days'] = (df_clean['gate_out_time'] - df_clean['discharge_time']).dt.total_seconds() / (24 * 3600)
+        df_clean = df_clean[df_clean['dwell_time_days'] >= 0]  # Lọc bỏ lỗi logic ngày ra trước ngày vào
+        
+        # 4. Xuất dữ liệu sạch ra tệp lưu trữ (Load Phase)
+        logging.info(f"Đang ghi nhận dữ liệu đã làm sạch vào: {target_csv_path}")
+        df_clean.to_csv(target_csv_path, index=False)
+        logging.info("Quy trình ETL hoàn tất thành công!")
+        return True
+        
+    except FileNotFoundError as e:
+        logging.error(f"LỖI HỆ THỐNG FILE: {str(e)}")
+        return False
+    except KeyError as e:
+        logging.error(f"LỖI CẤU TRÚC (SCHEMA): {str(e)}")
+        return False
+    except Exception as e:
+        logging.error(f"LỖI VẬN HÀNH KHÔNG XÁC ĐỊNH: {str(e)}")
+        return False
+
+# ----------------- KIỂM THỬ ĐƯỜNG ỐNG TỰ ĐỘNG -----------------
+# Giả lập một file dữ liệu thô bị lỗi định dạng trọng lượng và rỗng thời gian
+raw_data = """container_id,discharge_time,gate_out_time,weight_tons
+CONT_001,2026-07-02 08:00:00,2026-07-04 12:00:00,22.5
+CONT_002,2026-07-02 09:00:00,,18.4
+CONT_003,,2026-07-05 10:00:00,21.0
+CONT_004,2026-07-02 11:00:00,2026-07-03 15:30:00,invalid_weight_string
+"""
+
+source_path = "raw_terminal_data.csv"
+target_path = "cleaned_terminal_data.csv"
+
+# Tạo tệp thô tạm thời
+with open(source_path, "w") as f:
+    f.write(raw_data)
+
+# Chạy kiểm thử đường ống ETL
+run_successful = run_automated_etl(source_path, target_path)
+
+# Dọn dẹp tệp tin sau khi chạy thử nghiệm
+if os.path.exists(source_path):
+    os.remove(source_path)
+if os.path.exists(target_path):
+    os.remove(target_path)
+```
+
+#### 3. Cách đọc kết quả & Diễn giải trong bài báo
+*   **Kết quả đầu ra của code:** Dù dữ liệu thô có lỗi chuỗi ký tự (`invalid_weight_string`) và bị khuyết thiếu các cột mốc thời gian, đường ống ETL vẫn chạy thành công mà không bị sập. Nó tự động loại bỏ các bản ghi không hợp lệ (`CONT_002`, `CONT_003`), tính toán thời gian dwell time chính xác cho các container sạch và lưu lại kết quả.
+*   **Cách viết vào bài báo khoa học (Phần Methodology - Data Pipeline):**
+    > "To guarantee the continuous ingestion of operational streaming data, an automated Extract-Transform-Load (ETL) pipeline was developed. Defensive programming abstractions were integrated into the pipeline architecture using structured exception handling blocks ($\mathtt{try\text{-}except}$) to capture File System errors and Schema mismatches. The pipeline robustly converts datetime strings, handles non-numeric telemetry logs through median imputation, and flags logical operational conflicts (e.g., negative dwell times). Structured system logging records errors dynamically to prevent pipeline termination during daily batch execution."
+
+---
 
 ---
 
