@@ -1068,7 +1068,7 @@ print(df_features[['Vessel_ID', 'Vessel_Turnaround_Time', 'Container_Weight', 'W
   > "Feature engineering was employed to derive high-level indicators from the primary variables. First, vessel Turnaround Time ($TAT$) was calculated as the operational difference between actual departure ($ATD$) and actual arrival ($ATA$) timestamps:
   >
   > $$
-  > TAT = T_{\\text{departure}} - T_{\\text{arrival}}
+  > TAT = T_{\text{departure}} - T_{\text{arrival}}
   > $$
   >
   > Second, continuous container payloads were categorized into discrete weight brackets (Light, Medium, and Heavy) using boundary cut-offs corresponding to crane load capacities. These engineered inputs provide the predictive models with structured, operational context."
@@ -1490,7 +1490,7 @@ Ta so sánh 3 thuật toán phổ biến:
 
 **Chỉ số đánh giá khoa học:**
 *   **Hệ số xác định ($R^2$):** Tỷ lệ phần trăm sự biến động của dữ liệu được giải thích bởi mô hình.
-    $$R^2 = 1 - \\frac{\\sum_{i=1}^n (y_i - \\hat{y}_i)^2}{\\sum_{i=1}^n (y_i - \\bar{y})^2}$$
+    $$R^2 = 1 - \frac{\sum_{i=1}^n (y_i - \hat{y}_i)^2}{\sum_{i=1}^n (y_i - \bar{y})^2}$$
 *   **MAE (Sai số tuyệt đối trung bình) & RMSE (Sai số bình phương trung bình):** Đo lường trực tiếp độ lệch trung bình giữa dự báo và thực tế (đơn vị: ngày).
 
 #### 2. Code mẫu thực hành (Google Colab)
@@ -1565,7 +1565,7 @@ Khác với hồi quy, bài toán Phân loại (Classification) dự đoán mộ
 *   **Precision (Độ chính xác trên lớp dự báo):** Tỷ lệ dự báo đúng trong số các trường hợp mô hình báo xảy ra sự cố.
 *   **Recall (Độ nhạy):** Khả năng mô hình tìm ra và không bỏ sót các sự cố trễ chuyến thực tế.
 *   **F1-score:** Trung bình điều hòa giữa Precision và Recall.
-    $$F_1 = 2 \\cdot \\frac{\\text{Precision} \\cdot \\text{Recall}}{\\text{Precision} + \\text{Recall}}$$
+    $$F_1 = 2 \cdot \frac{\text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
 *   **ROC-AUC:** Khả năng phân biệt giữa lớp sự cố và bình thường ở mọi ngưỡng phân lớp.
 
 #### 2. Code mẫu thực hành (Google Colab)
@@ -2396,7 +2396,7 @@ print(df_yard[['Timestamp', 'Gate_Traffic', 'Rolling_Gate_Traffic_3h', 'Gate_Tra
 Trong công tác điều độ cảng biển, việc tối ưu hóa cầu bến và phương tiện xếp dỡ (Berth Allocation and Quay Crane Assignment) đóng vai trò quyết định đến hiệu năng khai thác. Lịch tàu cập bến thực tế (ATA) thường xuyên dao động so với lịch dự kiến (ETA) do thời tiết hoặc tắc nghẽn ở các cảng trước đó. 
 
 Điều độ viên cảng cần một **Bảng điều khiển tương tác (Interactive Dashboard)** thời gian thực để nhanh chóng phát hiện xung đột và đưa ra phương án phân bổ lại bến (Re-berthing). Xung đột xảy ra khi hai tàu được xếp vào cùng một bến cảng có khoảng thời gian chiếm dụng bến chồng lấn lên nhau:
-$$\text{Overlap}(i, j) = \max\left(0, \min(End_i, End_j) - \max(Start_i, Start_j)\right) > 0 \quad \text{với } Berth_i = Berth_j$$
+$$\text{Overlap}(i, j) = \max\left(0, \min(\text{End}_i, \text{End}_j) - \max(\text{Start}_i, \text{Start}_j)\right) > 0 \quad \text{with } \text{Berth}_i = \text{Berth}_j$$
 
 Bằng cách kết hợp Matplotlib với thư viện điều khiển tương tác **ipywidgets** trên nền tảng đám mây Google Colab, ta có thể xây dựng một dashboard động cho phép:
 1.  **Lọc dữ liệu theo thời gian thực**: Lọc lịch tàu theo từng cầu cảng cụ thể hoặc theo hãng tàu.
@@ -2720,7 +2720,7 @@ print(f"[Cross-Validation] Sai số MAE tốt nhất: {-grid_search.best_score_:
 #### 1. Lý thuyết cốt lõi
 *   **Dự báo lưu lượng giao thông tại cổng (Smart Gate Traffic Forecasting):** Nhằm ngăn chặn ùn tắc xe tải trên các tuyến đường kết nối cảng, cảng cần dự báo trước số lượng xe tải sẽ đến cổng theo từng khung giờ trong ngày dựa vào dữ liệu lịch sử để bố trí làn và nhân sự.
 *   **Bài toán Tối ưu hóa vị trí xếp dỡ (Yard Allocation Problem):** Đây là bài toán **Nghiên cứu vận trù học (Operations Research - OR)**. Mục tiêu là phân bổ container vào các vị trí bãi sao cho tổng quãng đường di chuyển của các thiết bị nâng hạ (RTG, RMG) là ngắn nhất, giảm thiểu xung đột giao thông nội bộ.
-    $$\\min Z = \\sum_{i \\in I} \\sum_{j \\in J} d_{ij} \\cdot x_{ij}$$
+    $$\min Z = \sum_{i \in I} \sum_{j \in J} d_{ij} \cdot x_{ij}$$
     Trong đó $d_{ij}$ là khoảng cách từ bến $i$ đến block $j$, và $x_{ij}$ là biến quyết định nhị phân có gán container vào block đó hay không.
 
 #### 2. Code mẫu thực hành (Google Colab)
